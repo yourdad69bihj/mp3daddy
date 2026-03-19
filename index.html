@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SPEED MP3 CONVERTER</title>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.0/dist/ffmpeg.min.js"></script>
+    <style>
+        body { background: #0a0a0a; color: #00FF00; font-family: 'Courier New', monospace; text-align: center; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .menu-box { border: 2px solid #333; padding: 40px; background: #111; width: 450px; box-shadow: 0 0 20px rgba(0,255,0,0.2); }
+        h1 { font-size: 28px; border-bottom: 2px solid #00FF00; padding-bottom: 10px; margin-bottom: 20px; letter-spacing: 3px; }
+        
+        /* Progress Circle */
+        .progress-container { position: relative; width: 150px; height: 150px; margin: 20px auto; display: none; }
+        svg { transform: rotate(-90deg); width: 150px; height: 150px; }
+        circle { fill: none; stroke-width: 10; stroke-dasharray: 440; transition: stroke-dashoffset 0.1s; }
+        .bg { stroke: #222; }
+        .fg { stroke: #00FF00; stroke-dashoffset: 440; }
+        .percent { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; color: white; font-weight: bold; }
+
+        input[type="text"] { background: #000; border: 1px solid #00FF00; color: #fff; padding: 12px; width: 85%; margin-bottom: 15px; outline: none; }
+        .btn { background: #00FF00; color: #000; border: none; padding: 15px; font-weight: bold; cursor: pointer; width: 92%; text-transform: uppercase; font-size: 16px; transition: 0.3s; }
+        .btn:hover { background: #fff; transform: scale(1.02); }
+        .file-label { display: block; border: 1px dashed #444; padding: 20px; margin: 20px 0; cursor: pointer; color: #888; transition: 0.3s; }
+        .file-label:hover { border-color: #00FF00; color: #00FF00; }
+        #status { font-size: 12px; color: #666; margin-top: 20px; text-transform: uppercase; letter-spacing: 1px; }
+    </style>
+</head>
+<body>
+
+    <div class="menu-box">
+        <h1>MP3 CONVERTER</h1>
+        
+        <input type="text" id="urlInput" placeholder="PASTE YOUTUBE URL...">
+        <button class="btn" onclick="convertURL()">CONVERT LINK</button>
+
+        <div style="margin: 20px 0; color: #333; font-weight: bold;">[ OR ]</div>
+
+        <label for="fileInput" class="file-label">
+            [ SELECT VIDEO FROM PC ]
+            <input type="file" id="fileInput" hidden accept="video/*,audio/*">
+        </label>
+
+        <div class="progress-container" id="progContainer">
+            <svg>
+                <circle class="bg" cx="75" cy="75" r="70"></circle>
+                <circle class="fg" id="progCircle" cx="75" cy="75" r="70"></circle>
+            </svg>
+            <div class="percent" id="percentText">0%</div>
+        </div>
+
+        <p id="status">STATUS: STANDBY</p>
+    </div>
+
+    <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        const ffmpeg = createFFmpeg({ 
+            log: false,
+            corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
+        });
+
+        // --- URL LOGIC ---
+        function convertURL() {
+            const url = document.getElementById('urlInput').value;
+            if(!url) return alert("Paste a link first!");
+            document.getElementById('status').innerText = "OPENING SECURE CONVERTER...";
+            // Since GitHub/HTML can't download YouTube directly, we use a clean API redirect
+            window.open(`https://api.vevioz.com/@api/button/mp3/${extractID(url)}`, "_blank");
+        }
+
+        function extractID(url) {
+            const reg = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const m = url.match(reg);
+            return (m && m[2].length == 11) ? m[2] : null;
+        }
+
+        // --- LOCAL FILE LOGIC (Real Conversion) ---
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const status = document.getElementById('status');
+            const container = document.getElementById('progContainer');
+            const circle = document.getElementById('progCircle');
+            const percentText = document.getElementById('percentText');
+
+            container.style.display = "block";
+            status.innerText = "INITIALIZING ENGINE...";
+
+            if (!ffmpeg.isLoaded()) await ffmpeg.load();
+
+            ffmpeg.setProgress(({ ratio }) => {
+                const p = Math.floor(ratio * 100);
+                percentText.innerText = p + "%";
+                circle.style.strokeDashoffset = 440 - (440 * p / 100);
+            });
+
+            status.innerText = "EXTRACTING AUDIO...";
+            ffmpeg.FS('writeFile', 'input', await fetchFile(file));
+            
+            // This command rips the audio and makes it a real 192k MP3
+            await ffmpeg.run('-i', 'input', '-vn', '-ab', '192k', '-ar', '44100', 'output.mp3');
+
+            const data = ffmpeg.FS('readFile', 'output.mp3');
+            const url = URL.createObjectURL(new Blob([data.buffer], { type: 'audio/mp3' }));
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = file.name.split('.')[0] + ".mp3";
+            link.click();
+
+            status.innerText = "CONVERSION COMPLETE!";
+            percentText.innerText = "100%";
+            circle.style.strokeDashoffset = 0;
+        });
+    </script>
+</body>
+</html>
